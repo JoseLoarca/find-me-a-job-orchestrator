@@ -1,3 +1,6 @@
+# Added by me
+.idea
+
 *.js
 !jest.config.js
 *.d.ts

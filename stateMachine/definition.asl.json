@@ -1,0 +1,14 @@
+{
+  "Comment": "Empty workflow",
+  "StartAt": "PassState",
+  "States": {
+    "PassState": {
+      "Type": "Pass",
+      "Result": {
+        "message": "Workflow is working!",
+        "status": "success"
+      },
+      "End": true
+    }
+  }
+}
