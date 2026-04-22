@@ -1,0 +1,40 @@
+name: deploy.yml
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+#      - name: Install Lambda dependencies
+#        run: |
+#          cd lambda
+#          npm ci
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@main
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: deployment-session
+
+      - name: cdk deploy
+        run: npx --yes cdk deploy --all --require-approval never

@@ -5,7 +5,7 @@
     "PassState": {
       "Type": "Pass",
       "Result": {
-        "message": "Workflow is working!",
+        "message": "Workflow is working and supports GitHub Actions!",
         "status": "success"
       },
       "End": true
