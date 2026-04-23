@@ -7,7 +7,7 @@ import {Schedule, ScheduleExpression} from "aws-cdk-lib/aws-scheduler";
 import {StepFunctionsStartExecution} from "aws-cdk-lib/aws-scheduler-targets";
 import {PythonFunction} from "@aws-cdk/aws-lambda-python-alpha";
 import path from 'path';
-import {Runtime} from 'aws-cdk-lib/aws-lambda';
+import {Architecture, Runtime} from 'aws-cdk-lib/aws-lambda';
 
 
 export class FindMeAJobOrchestratorStack extends cdk.Stack {
@@ -17,9 +17,10 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
         // -- Lambda Functions --
         const manualWorkflowApprovalFunction = new PythonFunction(this, 'ManualWorkflowApprovalFunction', {
             entry: path.join(__dirname, '../lambda/manualWorkflowApprovalFunction'),
-            runtime: Runtime.PYTHON_3_13,
+            runtime: Runtime.PYTHON_3_14,
             index: 'app.py',
-            handler: 'lambda_handler'
+            handler: 'lambda_handler',
+            architecture: Architecture.ARM_64
         });
 
         const lambdaAccessPolicy = new PolicyDocument({

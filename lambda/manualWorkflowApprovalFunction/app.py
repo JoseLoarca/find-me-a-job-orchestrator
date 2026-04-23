@@ -17,7 +17,7 @@ def lambda_handler(event, context):
     """
     try:
         # Parse the input event
-        task_token = event
+        task_token = event.task_token
         logger.info(task_token)
 
         return {

@@ -1,7 +1,6 @@
 # Added by me
 .idea
 .DS_Store
-lambda/**/.venv
 
 *.js
 !jest.config.js
