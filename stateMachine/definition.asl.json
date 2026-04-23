@@ -1,13 +1,54 @@
 {
-  "Comment": "Empty workflow",
-  "StartAt": "PassState",
+  "Comment": "Find Me A Job Workflow",
+  "StartAt": "Manual Workflow Approval",
   "States": {
-    "PassState": {
+    "Manual Workflow Approval": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Arguments": {
+        "FunctionName": "${manualWorkflowApprovalFunctionARN}",
+        "Payload": {
+          "task_token": "{% $states.context.Task.Token %}"
+        },
+        "Parameters": {
+          "Payload.$": "$"
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException",
+              "Lambda.TooManyRequestsException"
+            ],
+            "IntervalSeconds": 1,
+            "MaxAttempts": 3,
+            "BackoffRate": 2,
+            "JitterStrategy": "FULL"
+          }
+        ],
+        "Next": "Workflow Approved",
+        "OutputPath": "$.Payload",
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "Comment": "Workflow Execution Rejected",
+            "Next": "Workflow Rejected"
+          }
+        ]
+      }
+    },
+    "Workflow Approved": {
       "Type": "Pass",
       "Result": {
-        "message": "Workflow is working and supports GitHub Actions!",
-        "status": "success"
+        "msg": "Workflow execution was approved"
       },
+      "End": true
+    },
+    "Workflow Rejected": {
+      "Type": "Pass",
       "End": true
     }
   }
