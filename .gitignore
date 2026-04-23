@@ -1,6 +1,7 @@
 # Added by me
 .idea
 .DS_Store
+!/frontend/app.js
 
 *.js
 !jest.config.js

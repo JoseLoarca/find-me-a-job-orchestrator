@@ -8,11 +8,36 @@ import {StepFunctionsStartExecution} from "aws-cdk-lib/aws-scheduler-targets";
 import {PythonFunction} from "@aws-cdk/aws-lambda-python-alpha";
 import path from 'path';
 import {Architecture, Runtime} from 'aws-cdk-lib/aws-lambda';
+import {BlockPublicAccess, Bucket} from "aws-cdk-lib/aws-s3";
+import {Distribution} from "aws-cdk-lib/aws-cloudfront";
+import {S3BucketOrigin} from "aws-cdk-lib/aws-cloudfront-origins";
+import {BucketDeployment, Source} from "aws-cdk-lib/aws-s3-deployment";
 
 
 export class FindMeAJobOrchestratorStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
+
+        // -- Frontend (S3 & CloudFront) --
+        const frontendBucket = new Bucket(this, 'ManualWorkflowApprovalFrontendBucket', {
+            publicReadAccess: false,
+            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+            enforceSSL: true,
+        });
+
+        const distribution = new Distribution(this, 'ManualWorkflowApprovalFrontendDist', {
+            defaultRootObject: 'index.html',
+            defaultBehavior: {
+                origin: S3BucketOrigin.withOriginAccessControl(frontendBucket),
+            }
+        });
+
+        new BucketDeployment(this, 'DeployFrontend', {
+            sources: [Source.asset(path.join(__dirname, '../frontend'))],
+            destinationBucket: frontendBucket,
+            distribution,
+            distributionPaths: ['/*'],
+        });
 
         // -- Lambda Functions --
         const manualWorkflowApprovalFunction = new PythonFunction(this, 'ManualWorkflowApprovalFunction', {
@@ -47,7 +72,8 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
             role: stateMachineRole,
             definitionBody: DefinitionBody.fromFile('stateMachine/definition.asl.json'),
             definitionSubstitutions: {
-                manualWorkflowApprovalFunctionARN: manualWorkflowApprovalFunction.functionArn
+                manualWorkflowApprovalFunctionARN: manualWorkflowApprovalFunction.functionArn,
+                manualWorkflowApprovalDistributionDomainName: distribution.domainName
             }
         });
 
@@ -73,6 +99,10 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
         // -- CloudFormation Output --
         new CfnOutput(this, 'CFOutputStateMachineArn', {
             value: workflow.stateMachineArn
+        });
+
+        new CfnOutput(this, 'ManualWorkflowApprovalFrontendURL', {
+            value: `https://${distribution.domainName}`
         });
     }
 }
