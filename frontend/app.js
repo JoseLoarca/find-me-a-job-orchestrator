@@ -97,8 +97,22 @@ function reject() {
 function approveCustom() {
     console.log("Custom approval")
     const searchTerm = document.getElementById('searchTerm').value;
+    const runEnrich = document.getElementById('runEnrich').checked;
+    const runEvaluate = document.getElementById('runEvaluate').checked;
 
-    sendDecision("APPROVE", {
-        searchTerm
+    sendDecision("APPROVE_CUSTOM", {
+        searchTerm,
+        runEnrich,
+        runEvaluate
     });
 }
+
+document.getElementById('runEnrich').addEventListener('change', (e) => {
+    const evalCheckbox = document.getElementById('runEvaluate');
+    if (!e.target.checked) {
+        evalCheckbox.checked = false;
+        evalCheckbox.disabled = true;
+    } else {
+        evalCheckbox.disabled = false;
+    }
+});

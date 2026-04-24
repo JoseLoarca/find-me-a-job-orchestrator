@@ -16,6 +16,7 @@ import {BucketDeployment, Source} from "aws-cdk-lib/aws-s3-deployment";
 import {Subscription, SubscriptionProtocol, Topic} from "aws-cdk-lib/aws-sns";
 import {Cors, LambdaIntegration, RestApi} from "aws-cdk-lib/aws-apigateway";
 import {AttributeType, BillingMode, Table} from "aws-cdk-lib/aws-dynamodb";
+import {CorsHttpMethod} from "aws-cdk-lib/aws-apigatewayv2";
 
 
 export class FindMeAJobOrchestratorStack extends cdk.Stack {
@@ -96,6 +97,13 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
         manualWorkflowApprovalRequestTable.grantReadWriteData(approvalFunction)
         snsTopic.grantPublish(manualWorkflowApprovalFunction);
 
+        const stepFunctionTaskPolicy = new PolicyStatement({
+            actions: ['states:SendTaskSuccess', 'states:SendTaskFailure'],
+            resources: ['*'] // Use wildcard to avoid circular dependency
+        });
+
+        approvalFunction.addToRolePolicy(stepFunctionTaskPolicy);
+
         const lambdaAccessPolicy = new PolicyDocument({
             statements: [
                 new PolicyStatement({
@@ -110,7 +118,7 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
         const api = new RestApi(this, 'ApprovalApi', {
             defaultCorsPreflightOptions: {
                 allowOrigins: Cors.ALL_ORIGINS,
-                allowMethods: Cors.ALL_METHODS
+                allowMethods: [CorsHttpMethod.OPTIONS, CorsHttpMethod.POST],
             }
         });
         const approvalIntegration = new LambdaIntegration(approvalFunction);
