@@ -11,6 +11,7 @@
           "task_token": "{% $states.context.Task.Token %}"
         }
       },
+      "TimeoutSeconds": 28800,
       "Retry": [
         {
           "ErrorEquals": [

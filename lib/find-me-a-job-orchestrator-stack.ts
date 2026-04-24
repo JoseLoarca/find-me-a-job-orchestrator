@@ -7,16 +7,36 @@ import {Schedule, ScheduleExpression} from "aws-cdk-lib/aws-scheduler";
 import {StepFunctionsStartExecution} from "aws-cdk-lib/aws-scheduler-targets";
 import {PythonFunction} from "@aws-cdk/aws-lambda-python-alpha";
 import path from 'path';
+import * as config from '../app-config.json'
 import {Architecture, Runtime} from 'aws-cdk-lib/aws-lambda';
 import {BlockPublicAccess, Bucket} from "aws-cdk-lib/aws-s3";
 import {Distribution} from "aws-cdk-lib/aws-cloudfront";
 import {S3BucketOrigin} from "aws-cdk-lib/aws-cloudfront-origins";
 import {BucketDeployment, Source} from "aws-cdk-lib/aws-s3-deployment";
+import {Subscription, SubscriptionProtocol, Topic} from "aws-cdk-lib/aws-sns";
 
 
 export class FindMeAJobOrchestratorStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
+
+        // -- SNS Topic --
+        const snsTopic = new Topic(this, 'FindMeAJobOrchestratorTopic');
+
+        new Subscription(this, 'FindMeAJobOrchestratorEmailSubscription', {
+            topic: snsTopic,
+            endpoint: config.emailAddress, // @TODO: handle this as an env var
+            protocol: SubscriptionProtocol.EMAIL
+        });
+
+        const snsPublishPolicy = new PolicyDocument({
+            statements: [
+                new PolicyStatement({
+                    actions: ['sns:Publish'],
+                    resources: [snsTopic.topicArn],
+                })
+            ],
+        });
 
         // -- Frontend (S3 & CloudFront) --
         const frontendBucket = new Bucket(this, 'ManualWorkflowApprovalFrontendBucket', {
@@ -45,8 +65,14 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
             runtime: Runtime.PYTHON_3_14,
             index: 'app.py',
             handler: 'lambda_handler',
-            architecture: Architecture.ARM_64
+            architecture: Architecture.ARM_64,
+            environment: {
+                MANUAL_APPROVAL_DOMAIN_NAME: distribution.domainName,
+                TOPIC_ARN: snsTopic.topicArn,
+            }
         });
+
+        snsTopic.grantPublish(manualWorkflowApprovalFunction);
 
         const lambdaAccessPolicy = new PolicyDocument({
             statements: [
@@ -62,7 +88,8 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
         const stateMachineRole = new Role(this, 'FindMeAJobStateMachineRole', {
             assumedBy: new ServicePrincipal('states.amazonaws.com'),
             inlinePolicies: {
-                lambdaAccessPolicy: lambdaAccessPolicy
+                lambdaAccessPolicy: lambdaAccessPolicy,
+                snsPublishPolicy: snsPublishPolicy,
             }
         });
 
