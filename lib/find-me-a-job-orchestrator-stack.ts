@@ -1,8 +1,8 @@
 import * as cdk from 'aws-cdk-lib/core';
+import {CfnOutput, RemovalPolicy, TimeZone} from 'aws-cdk-lib/core';
 import {Construct} from 'constructs';
 import {PolicyDocument, PolicyStatement, Role, ServicePrincipal} from "aws-cdk-lib/aws-iam";
 import {DefinitionBody, StateMachine} from "aws-cdk-lib/aws-stepfunctions";
-import {CfnOutput, TimeZone} from "aws-cdk-lib/core";
 import {Schedule, ScheduleExpression} from "aws-cdk-lib/aws-scheduler";
 import {StepFunctionsStartExecution} from "aws-cdk-lib/aws-scheduler-targets";
 import {PythonFunction} from "@aws-cdk/aws-lambda-python-alpha";
@@ -14,11 +14,26 @@ import {Distribution} from "aws-cdk-lib/aws-cloudfront";
 import {S3BucketOrigin} from "aws-cdk-lib/aws-cloudfront-origins";
 import {BucketDeployment, Source} from "aws-cdk-lib/aws-s3-deployment";
 import {Subscription, SubscriptionProtocol, Topic} from "aws-cdk-lib/aws-sns";
+import {Cors, LambdaIntegration, RestApi} from "aws-cdk-lib/aws-apigateway";
+import {AttributeType, BillingMode, Table} from "aws-cdk-lib/aws-dynamodb";
 
 
 export class FindMeAJobOrchestratorStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
+
+        // -- DynamoDB --
+        const manualWorkflowApprovalRequestTable = new Table(this, 'ManualWorkflowApprovalRequestTable', {
+            tableName: 'manual-workflow-approval-requests',
+            partitionKey: {
+                name: 'requestId',
+                type: AttributeType.STRING,
+            },
+            billingMode: BillingMode.PAY_PER_REQUEST,
+            timeToLiveAttribute: 'ttl',
+            removalPolicy: RemovalPolicy.DESTROY
+
+        });
 
         // -- SNS Topic --
         const snsTopic = new Topic(this, 'FindMeAJobOrchestratorTopic');
@@ -52,13 +67,6 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
             }
         });
 
-        new BucketDeployment(this, 'DeployFrontend', {
-            sources: [Source.asset(path.join(__dirname, '../frontend'))],
-            destinationBucket: frontendBucket,
-            distribution,
-            distributionPaths: ['/*'],
-        });
-
         // -- Lambda Functions --
         const manualWorkflowApprovalFunction = new PythonFunction(this, 'ManualWorkflowApprovalFunction', {
             entry: path.join(__dirname, '../lambda/manualWorkflowApprovalFunction'),
@@ -69,9 +77,23 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
             environment: {
                 MANUAL_APPROVAL_DOMAIN_NAME: distribution.domainName,
                 TOPIC_ARN: snsTopic.topicArn,
+                MANUAL_APPROVAL_TABLE_NAME: manualWorkflowApprovalRequestTable.tableName
             }
         });
 
+        const approvalFunction = new PythonFunction(this, 'ApprovalFunction', {
+            entry: path.join(__dirname, '../lambda/approvalFunction'),
+            runtime: Runtime.PYTHON_3_14,
+            index: 'app.py',
+            handler: 'lambda_handler',
+            architecture: Architecture.ARM_64,
+            environment: {
+                MANUAL_APPROVAL_TABLE_NAME: manualWorkflowApprovalRequestTable.tableName
+            }
+        });
+
+        manualWorkflowApprovalRequestTable.grantReadWriteData(manualWorkflowApprovalFunction);
+        manualWorkflowApprovalRequestTable.grantReadWriteData(approvalFunction)
         snsTopic.grantPublish(manualWorkflowApprovalFunction);
 
         const lambdaAccessPolicy = new PolicyDocument({
@@ -83,6 +105,16 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
                 })
             ],
         });
+
+        // -- API Gateway --
+        const api = new RestApi(this, 'ApprovalApi', {
+            defaultCorsPreflightOptions: {
+                allowOrigins: Cors.ALL_ORIGINS,
+                allowMethods: Cors.ALL_METHODS
+            }
+        });
+        const approvalIntegration = new LambdaIntegration(approvalFunction);
+        api.root.addResource('manual-approval').addMethod('POST', approvalIntegration);
 
         // -- Step Functions Role --
         const stateMachineRole = new Role(this, 'FindMeAJobStateMachineRole', {
@@ -121,6 +153,21 @@ export class FindMeAJobOrchestratorStack extends cdk.Stack {
             target: new StepFunctionsStartExecution(workflow, {
                 role: schedulerRole,
             }),
+        });
+
+        // -- Deployments --
+        const frontendConfig = `window.APP_CONFIG = {API_URL: "${api.url}manual-approval"};`;
+
+        new BucketDeployment(this, 'DeployFrontend', {
+            sources: [
+                Source.asset(path.join(__dirname, '../frontend')),
+                Source.data('config.js', frontendConfig)
+            ],
+            destinationBucket: frontendBucket,
+            distribution,
+            distributionPaths: ['/*'],
+            // Invalidate cache but don't wait or verify that invalidation has completed successfully.
+            waitForDistributionInvalidation: false
         });
 
         // -- CloudFormation Output --
